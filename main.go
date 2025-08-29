@@ -10,12 +10,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const Version = "v0.3.0"
+
 func main() {
 	var inputFile = flag.String("input", "", "Input CircleCI config file (required)")
 	var outputDir = flag.String("output", ".", "Output directory for generated files")
 	var help = flag.Bool("help", false, "Show help message")
+	var version = flag.Bool("version", false, "Show version information")
 	
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("circle-to-task %s\n", Version)
+		return
+	}
 
 	if *help || *inputFile == "" {
 		showHelp()
@@ -63,8 +71,8 @@ func main() {
 }
 
 func showHelp() {
-	fmt.Println("Circle-to-Task Converter")
-	fmt.Println("========================")
+	fmt.Printf("Circle-to-Task Converter %s\n", Version)
+	fmt.Println("================================")
 	fmt.Println()
 	fmt.Println("Converts CircleCI config to orchestration-only config + Taskfile")
 	fmt.Println()
