@@ -1,0 +1,98 @@
+version: 2.1
+
+executors:
+  node-executor:
+    docker:
+      - image: node:16
+
+jobs:
+  setup:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Cache dependencies
+          command: npm ci --cache .npm --prefer-offline
+
+  lint:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Run linter
+          command: npm run lint
+      - run:
+          name: Check formatting
+          command: npm run format:check
+
+  test:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies  
+          command: npm install
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Generate coverage
+          command: npm run test:coverage
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: coverage
+
+  build:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Build application
+          command: npm run build
+      - run:
+          name: Build Docker image
+          command: docker build -t myapp:latest .
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/*
+            - Dockerfile
+      - store_artifacts:
+          path: dist
+
+  deploy:
+    executor: node-executor
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Deploy to staging
+          command: npm run deploy:staging
+
+workflows:
+  version: 2
+  build-test-deploy:
+    jobs:
+      - setup
+      - lint:
+          requires: [setup]
+      - test:
+          requires: [setup]  
+      - build:
+          requires: [lint, test]
+      - deploy:
+          requires: [build]

@@ -1,0 +1,44 @@
+version: "2.1"
+jobs:
+    build:
+        executor: node-executor
+        steps:
+            - run: task build
+    deploy:
+        executor: node-executor
+        steps:
+            - run: task deploy
+    lint:
+        executor: node-executor
+        steps:
+            - run: task lint
+    setup:
+        executor: node-executor
+        steps:
+            - run: task setup
+    test:
+        executor: node-executor
+        steps:
+            - run: task test
+workflows:
+    build-test-deploy:
+        jobs:
+            - setup
+            - lint:
+                requires:
+                    - setup
+            - test:
+                requires:
+                    - setup
+            - build:
+                requires:
+                    - lint
+                    - test
+            - deploy:
+                requires:
+                    - build
+    version: 2
+executors:
+    node-executor:
+        docker:
+            - image: node:16
