@@ -1,0 +1,98 @@
+version: 2.1
+
+executors:
+  node-executor:
+    docker:
+      - image: node:16
+
+commands:
+  install-deps:
+    description: Install Node.js dependencies
+    steps:
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Cache dependencies
+          command: npm ci --cache .npm --prefer-offline
+
+  run-tests:
+    description: Run tests with coverage
+    parameters:
+      coverage:
+        type: boolean
+        default: false
+    steps:
+      - run:
+          name: Run tests
+          command: npm test
+      - when:
+          condition: << parameters.coverage >>
+          steps:
+            - run:
+                name: Generate coverage
+                command: npm run test:coverage
+            - store_artifacts:
+                path: coverage
+
+  build-app:
+    description: Build the application
+    parameters:
+      environment:
+        type: string
+        default: "production"
+    steps:
+      - run:
+          name: Build for << parameters.environment >>
+          command: npm run build:<< parameters.environment >>
+      - store_artifacts:
+          path: dist
+
+jobs:
+  setup:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-deps
+
+  test:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-deps
+      - run-tests:
+          coverage: true
+
+  build:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-deps
+      - build-app:
+          environment: production
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/*
+
+  deploy:
+    executor: node-executor
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Deploy to production
+          command: npm run deploy:prod
+
+workflows:
+  version: 2
+  build-test-deploy:
+    jobs:
+      - setup
+      - test:
+          requires: [setup]
+      - build:
+          requires: [test]
+      - deploy:
+          requires: [build]

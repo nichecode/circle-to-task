@@ -1,0 +1,52 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the circle-to-task binary
+    cmds:
+      - go build -o circle-to-task .
+    sources:
+      - "*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - circle-to-task
+
+  test:
+    desc: Test the converter with example config
+    deps: [build]
+    cmds:
+      - ./circle-to-task -input examples/input-config.yml -output examples/output
+      - echo "✅ Test successful"
+      - echo "📁 Check examples/output/ for generated files"
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f circle-to-task
+      - rm -rf examples/output
+
+  dev:
+    desc: Build and test in one command
+    deps: [clean, build, test]
+    cmds:
+      - echo "🚀 Try it yourself:"
+      - echo "   ./circle-to-task -input <your-config.yml> -output <output-dir>"
+
+  install:
+    desc: Install go-task if not present
+    cmds:
+      - |
+        if ! command -v task &> /dev/null; then
+          echo "Installing go-task..."
+          go install github.com/go-task/task/v3/cmd/task@latest
+        else
+          echo "✅ go-task already installed"
+        fi
+    status:
+      - command -v task
+
+  help:
+    desc: Show available tasks
+    cmds:
+      - task --list

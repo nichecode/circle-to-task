@@ -10,7 +10,7 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 	newConfig := CircleCIConfig{
 		Version:   config.Version,
 		Jobs:      make(map[string]Job),
-		Commands:  config.Commands,
+		Commands:  nil, // Remove commands from new config - they become tasks
 		Workflows: config.Workflows,
 		Executors: config.Executors,
 	}
@@ -23,10 +23,16 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 	// Extract common patterns and deduplicate
 	patterns := analyzePatterns(config)
 	
+	// Convert CircleCI commands to tasks
+	commandTasks := convertCommandsToTasks(config.Commands)
+	for name, task := range commandTasks {
+		taskfile.Tasks[name] = task
+	}
+	
 	// Convert each job
 	for jobName, job := range config.Jobs {
 		// Create task from job steps
-		task := convertJobToTask(jobName, job, patterns)
+		task := convertJobToTask(jobName, job, patterns, config.Commands)
 		taskfile.Tasks[jobName] = task
 
 		// Create minimal CircleCI job that just calls the task
@@ -52,8 +58,8 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 	return newConfig, taskfile
 }
 
-// convertJobToTask converts a CircleCI job to a go-task Task
-func convertJobToTask(jobName string, job Job, patterns map[string]Task) Task {
+// convertJobToTask converts a CircleCI job to a go-task Task  
+func convertJobToTask(jobName string, job Job, patterns map[string]Task, commands map[string]Command) Task {
 	var cmds []string
 	var deps []string
 	var workingDir string
@@ -72,6 +78,22 @@ func convertJobToTask(jobName string, job Job, patterns map[string]Task) Task {
 			} else {
 				cmds = append(cmds, cmd)
 			}
+		} else if stepStr, ok := step.(string); ok {
+			// Check if this string step is a command invocation
+			if _, isCommandDefined := commands[stepStr]; isCommandDefined {
+				deps = append(deps, stepStr)
+			} else {
+				// Handle built-in steps like "checkout"
+				converted := convertStepToCommand(step)
+				if !strings.Contains(converted, "Skipping") && !strings.Contains(converted, "task ") {
+					cmds = append(cmds, converted)
+				} else {
+					cmds = append(cmds, fmt.Sprintf("# %s", converted))
+				}
+			}
+		} else if commandName, isCommand := isCommandInvocation(step); isCommand {
+			// This step invokes a CircleCI command with parameters, add it as a task dependency
+			deps = append(deps, commandName)
 		} else {
 			// Handle other step types (checkout, etc.)
 			converted := convertStepToCommand(step)
@@ -128,6 +150,42 @@ func addLocalDevTasks(taskfile *Taskfile) {
 			"echo 'Note: This runs the build logic, but skips server-only features'",
 		},
 	}
+}
+
+// convertCommandsToTasks converts CircleCI commands to go-task tasks
+func convertCommandsToTasks(commands map[string]Command) map[string]Task {
+	tasks := make(map[string]Task)
+	
+	for commandName, command := range commands {
+		var cmds []string
+		
+		for _, step := range command.Steps {
+			if cmd := extractCommand(step); cmd != "" {
+				cmds = append(cmds, cmd)
+			} else {
+				// Handle other step types
+				converted := convertStepToCommand(step)
+				if !strings.Contains(converted, "Skipping") {
+					cmds = append(cmds, converted)
+				} else {
+					cmds = append(cmds, fmt.Sprintf("# %s", converted))
+				}
+			}
+		}
+		
+		desc := command.Description
+		if desc == "" {
+			desc = fmt.Sprintf("Task converted from CircleCI command: %s", commandName)
+		}
+		
+		tasks[commandName] = Task{
+			Desc:   desc,
+			Cmds:   cmds,
+			Silent: false,
+		}
+	}
+	
+	return tasks
 }
 
 // Helper to get job dependencies from workflow

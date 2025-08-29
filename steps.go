@@ -29,13 +29,14 @@ func extractCommand(step Step) string {
 
 // convertStepToCommand converts CircleCI steps to local equivalent commands
 func convertStepToCommand(step Step) string {
-	// Handle string steps (like "checkout")
+	// Handle string steps (like "checkout" or command name)
 	if stepStr, ok := step.(string); ok {
 		switch stepStr {
 		case "checkout":
 			return "git checkout HEAD"
 		default:
-			return fmt.Sprintf("echo 'Step: %s'", stepStr)
+			// This could be a command invocation without parameters
+			return fmt.Sprintf("task %s", stepStr)
 		}
 	}
 
@@ -93,6 +94,30 @@ func convertStepToCommand(step Step) string {
 		}
 	}
 	return "echo 'Unknown step type'"
+}
+
+// isCommandInvocation checks if a step is a command invocation
+func isCommandInvocation(step Step) (string, bool) {
+	stepMap, ok := step.(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	
+	// Look for keys that aren't built-in CircleCI steps
+	builtInSteps := map[string]bool{
+		"run": true, "checkout": true, "setup_remote_docker": true,
+		"save_cache": true, "restore_cache": true, "persist_to_workspace": true,
+		"attach_workspace": true, "store_artifacts": true, "store_test_results": true,
+		"when": true, "unless": true,
+	}
+	
+	for key := range stepMap {
+		if !builtInSteps[key] {
+			return key, true
+		}
+	}
+	
+	return "", false
 }
 
 // normalizeCommand performs basic command normalization
