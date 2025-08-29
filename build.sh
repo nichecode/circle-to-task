@@ -2,7 +2,7 @@
 
 # Build and test the converter
 echo "🔨 Building circle-to-task..."
-go build -o circle-to-task main.go
+go build -o circle-to-task .
 
 if [ $? -ne 0 ]; then
     echo "❌ Build failed"
