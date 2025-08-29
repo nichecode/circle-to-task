@@ -53,6 +53,11 @@ func main() {
 		log.Fatal("Error writing taskfile:", err)
 	}
 
+	// Generate technology analysis
+	if err := generateTechnologyAnalysis(config, *outputDir); err != nil {
+		log.Printf("Warning: Error generating technology analysis: %v", err)
+	}
+
 	// Show success message
 	showSuccess(len(config.Jobs), configPath, taskfilePath, *outputDir)
 }
@@ -80,10 +85,12 @@ func showSuccess(jobCount int, configPath, taskfilePath, outputDir string) {
 	fmt.Printf("📁 Output files:\n")
 	fmt.Printf("   - %s (new CircleCI config)\n", configPath)
 	fmt.Printf("   - %s (go-task configuration)\n", taskfilePath)
+	fmt.Printf("   - %s/TECHNOLOGY_ANALYSIS.md (commands for AI categorization)\n", outputDir)
 	fmt.Printf("\n🚀 Next steps:\n")
 	fmt.Printf("   1. Review generated files\n")
-	fmt.Printf("   2. Test locally: cd %s && task <job-name>\n", outputDir)
-	fmt.Printf("   3. Install go-task if needed: go install github.com/go-task/task/v3/cmd/task@latest\n")
+	fmt.Printf("   2. Use TECHNOLOGY_ANALYSIS.md to categorize commands by technology\n")
+	fmt.Printf("   3. Test locally: cd %s && task <job-name>\n", outputDir)
+	fmt.Printf("   4. Install go-task if needed: go install github.com/go-task/task/v3/cmd/task@latest\n")
 }
 
 func writeYAMLFile(path string, data interface{}) error {

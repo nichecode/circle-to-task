@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -64,6 +65,153 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 	addLocalEnvDefaults(&taskfile, config)
 
 	return newConfig, taskfile
+}
+
+// extractAllCommands extracts all commands from the CircleCI config for technology analysis
+func extractAllCommands(config CircleCIConfig) []string {
+	var commands []string
+	seen := make(map[string]bool)
+	
+	// Extract from jobs
+	for _, job := range config.Jobs {
+		for _, step := range job.Steps {
+			if cmd := extractCommand(step); cmd != "" {
+				subCommands := extractIndividualCommands(cmd)
+				for _, subCmd := range subCommands {
+					cleanCmd := cleanCommandForAnalysis(subCmd)
+					if cleanCmd != "" && !seen[cleanCmd] {
+						commands = append(commands, cleanCmd)
+						seen[cleanCmd] = true
+					}
+				}
+			}
+		}
+	}
+	
+	// Extract from commands
+	for _, command := range config.Commands {
+		for _, step := range command.Steps {
+			if cmd := extractCommand(step); cmd != "" {
+				subCommands := extractIndividualCommands(cmd)
+				for _, subCmd := range subCommands {
+					cleanCmd := cleanCommandForAnalysis(subCmd)
+					if cleanCmd != "" && !seen[cleanCmd] {
+						commands = append(commands, cleanCmd)
+						seen[cleanCmd] = true
+					}
+				}
+			}
+		}
+	}
+	
+	return commands
+}
+
+// extractIndividualCommands splits multi-line commands into individual command lines
+func extractIndividualCommands(cmd string) []string {
+	var commands []string
+	
+	// Split by newlines and also by && operators
+	lines := strings.Split(cmd, "\n")
+	
+	for _, line := range lines {
+		// Split by && to get individual commands on same line
+		parts := strings.Split(line, "&&")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part != "" && !strings.HasPrefix(part, "#") { // Skip empty lines and comments
+				commands = append(commands, part)
+			}
+		}
+	}
+	
+	return commands
+}
+
+// cleanCommandForAnalysis cleans up commands for technology analysis
+func cleanCommandForAnalysis(cmd string) string {
+	// Remove parameter syntax and variables for cleaner analysis
+	cleaned := convertParameterSyntax(cmd)
+	
+	// Remove environment variables for cleaner output
+	envRegex := regexp.MustCompile(`\$[A-Z_][A-Z0-9_]*|\$\{[A-Z_][A-Z0-9_]*\}`)
+	cleaned = envRegex.ReplaceAllString(cleaned, "${VAR}")
+	
+	// Normalize whitespace but preserve line breaks for multi-line commands
+	cleaned = strings.TrimSpace(cleaned)
+	
+	// Skip empty or very short commands
+	if len(cleaned) < 3 {
+		return ""
+	}
+	
+	return cleaned
+}
+
+// generateTechnologyAnalysis creates a markdown file with all commands for AI analysis
+func generateTechnologyAnalysis(config CircleCIConfig, outputDir string) error {
+	commands := extractAllCommands(config)
+	
+	if len(commands) == 0 {
+		return nil // No commands to analyze
+	}
+	
+	var content strings.Builder
+	
+	content.WriteString("# Technology Analysis Report\n\n")
+	content.WriteString("This file contains all commands extracted from the CircleCI configuration for technology categorization.\n\n")
+	content.WriteString("## Instructions for AI Analysis\n\n")
+	content.WriteString("Please categorize these commands by technology/tool type. Suggested categories:\n")
+	content.WriteString("- **Package Managers**: npm, yarn, pip, composer, etc.\n")
+	content.WriteString("- **Build Tools**: webpack, gulp, maven, gradle, etc.\n")
+	content.WriteString("- **Testing**: jest, pytest, phpunit, go test, etc.\n")
+	content.WriteString("- **Cloud/Infrastructure**: aws, gcloud, kubectl, terraform, etc.\n")
+	content.WriteString("- **Containers**: docker, podman, etc.\n")
+	content.WriteString("- **Languages**: node, python, php, go, java, etc.\n")
+	content.WriteString("- **Databases**: mysql, postgres, redis, etc.\n")
+	content.WriteString("- **Other Tools**: git, curl, ssh, etc.\n\n")
+	
+	content.WriteString(fmt.Sprintf("## All Commands (%d unique commands)\n\n", len(commands)))
+	
+	for i, cmd := range commands {
+		content.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, cmd))
+	}
+	
+	content.WriteString("\n")
+	content.WriteString("## Technology Categories\n\n")
+	content.WriteString("*Please fill in this section after AI analysis*\n\n")
+	content.WriteString("### Package Managers\n- \n\n")
+	content.WriteString("### Build Tools\n- \n\n") 
+	content.WriteString("### Testing Frameworks\n- \n\n")
+	content.WriteString("### Cloud/Infrastructure\n- \n\n")
+	content.WriteString("### Container Tools\n- \n\n")
+	content.WriteString("### Programming Languages\n- \n\n")
+	content.WriteString("### Databases\n- \n\n")
+	content.WriteString("### Other Tools\n- \n\n")
+	
+	analysisPath := fmt.Sprintf("%s/TECHNOLOGY_ANALYSIS.md", outputDir)
+	return writeTextFile(analysisPath, content.String())
+}
+
+// writeTextFile writes a text file to the filesystem
+func writeTextFile(path string, content string) error {
+	return writeFileContent(path, []byte(content))
+}
+
+// writeFileContent writes content to a file
+func writeFileContent(path string, content []byte) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+	
+	_, err = file.Write(content)
+	if err != nil {
+		return fmt.Errorf("error writing content: %w", err)
+	}
+	
+	return nil
 }
 
 // convertParameterSyntax converts CircleCI parameter syntax to go-task variable syntax

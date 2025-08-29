@@ -1,0 +1,39 @@
+# Build artifacts
+circle-to-task
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output coverage files
+*.out
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# go-task build cache  
+.task/
+
+# Example output directories (keep examples but not generated output)
+examples/output/
+examples/output-*/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
