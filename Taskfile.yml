@@ -47,14 +47,21 @@ tasks:
       - command -v task
 
   install:
-    desc: Install circle-to-task CLI globally (latest version)
+    desc: Compile and install circle-to-task CLI globally from source
+    cmds:
+      - go install .
+      - echo "✅ circle-to-task compiled and installed globally from source"
+      - echo "You can now run 'circle-to-task' from anywhere"
+
+  install-remote:
+    desc: Install circle-to-task from GitHub (latest release)
     cmds:
       - go install github.com/nichecode/circle-to-task@latest
-      - echo "✅ circle-to-task@latest installed globally"
+      - echo "✅ circle-to-task@latest installed globally from GitHub"
       - echo "You can now run 'circle-to-task' from anywhere"
 
   install-version:
-    desc: Install specific version of circle-to-task CLI (use VERSION=v0.3.0)
+    desc: Install specific version of circle-to-task CLI from GitHub (use VERSION=v0.3.0)
     cmds:
       - |
         if [ -z "{{.VERSION}}" ]; then
@@ -62,7 +69,7 @@ tasks:
           exit 1
         fi
       - go install github.com/nichecode/circle-to-task@{{.VERSION}}
-      - echo "✅ circle-to-task@{{.VERSION}} installed globally"
+      - echo "✅ circle-to-task@{{.VERSION}} installed globally from GitHub"
       - echo "You can now run 'circle-to-task' from anywhere"
 
   version:
@@ -71,8 +78,9 @@ tasks:
       - echo "🏷️ Available versions:"
       - git tag --sort=-version:refname | head -10 || echo "No tags found"
       - echo ""
-      - echo "📦 Install latest{{":"}} task install"
-      - echo "📦 Install specific{{":"}} task install-version VERSION=v0.3.0"
+      - echo "📦 Install from source{{":"}} task install"
+      - echo "📦 Install from GitHub{{":"}} task install-remote"
+      - echo "📦 Install specific version{{":"}} task install-version VERSION=v0.3.0"
 
   help:
     desc: Show available tasks
