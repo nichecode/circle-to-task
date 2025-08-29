@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Version = "v0.3.0"
+const Version = "v0.3.1"
 
 func main() {
 	var inputFile = flag.String("input", "", "Input CircleCI config file (required)")
