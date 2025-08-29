@@ -33,7 +33,7 @@ tasks:
       - echo "🚀 Try it yourself:"
       - echo "   ./circle-to-task -input <your-config.yml> -output <output-dir>"
 
-  install:
+  install-task:
     desc: Install go-task if not present
     cmds:
       - |
@@ -45,6 +45,13 @@ tasks:
         fi
     status:
       - command -v task
+
+  install:
+    desc: Install circle-to-task CLI globally
+    cmds:
+      - go install github.com/nichecode/circle-to-task@latest
+      - echo "✅ circle-to-task installed globally"
+      - echo "You can now run 'circle-to-task' from anywhere"
 
   help:
     desc: Show available tasks
