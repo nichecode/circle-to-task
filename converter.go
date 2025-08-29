@@ -67,10 +67,15 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 	return newConfig, taskfile
 }
 
-// extractAllCommands extracts all commands from the CircleCI config for technology analysis
-func extractAllCommands(config CircleCIConfig) []string {
-	var commands []string
-	seen := make(map[string]bool)
+// CommandInfo holds information about a command including usage count
+type CommandInfo struct {
+	Command string
+	Count   int
+}
+
+// extractAllCommands extracts all commands from the CircleCI config with usage counts
+func extractAllCommands(config CircleCIConfig) []CommandInfo {
+	commandCounts := make(map[string]int)
 	
 	// Extract from jobs
 	for _, job := range config.Jobs {
@@ -79,9 +84,8 @@ func extractAllCommands(config CircleCIConfig) []string {
 				subCommands := extractIndividualCommands(cmd)
 				for _, subCmd := range subCommands {
 					cleanCmd := cleanCommandForAnalysis(subCmd)
-					if cleanCmd != "" && !seen[cleanCmd] {
-						commands = append(commands, cleanCmd)
-						seen[cleanCmd] = true
+					if cleanCmd != "" {
+						commandCounts[cleanCmd]++
 					}
 				}
 			}
@@ -95,11 +99,26 @@ func extractAllCommands(config CircleCIConfig) []string {
 				subCommands := extractIndividualCommands(cmd)
 				for _, subCmd := range subCommands {
 					cleanCmd := cleanCommandForAnalysis(subCmd)
-					if cleanCmd != "" && !seen[cleanCmd] {
-						commands = append(commands, cleanCmd)
-						seen[cleanCmd] = true
+					if cleanCmd != "" {
+						commandCounts[cleanCmd]++
 					}
 				}
+			}
+		}
+	}
+	
+	// Convert map to sorted slice
+	var commands []CommandInfo
+	for cmd, count := range commandCounts {
+		commands = append(commands, CommandInfo{Command: cmd, Count: count})
+	}
+	
+	// Sort by count (descending) then by command name
+	for i := 0; i < len(commands); i++ {
+		for j := i + 1; j < len(commands); j++ {
+			if commands[i].Count < commands[j].Count || 
+			   (commands[i].Count == commands[j].Count && commands[i].Command > commands[j].Command) {
+				commands[i], commands[j] = commands[j], commands[i]
 			}
 		}
 	}
@@ -161,7 +180,8 @@ func generateTechnologyAnalysis(config CircleCIConfig, outputDir string) error {
 	content.WriteString("# Technology Analysis Report\n\n")
 	content.WriteString("This file contains all commands extracted from the CircleCI configuration for technology categorization.\n\n")
 	content.WriteString("## Instructions for AI Analysis\n\n")
-	content.WriteString("Please categorize these commands by technology/tool type. Suggested categories:\n")
+	content.WriteString("Please categorize these commands by technology/tool type. Commands are sorted by usage frequency (most used first).\n\n")
+	content.WriteString("Suggested categories:\n")
 	content.WriteString("- **Package Managers**: npm, yarn, pip, composer, etc.\n")
 	content.WriteString("- **Build Tools**: webpack, gulp, maven, gradle, etc.\n")
 	content.WriteString("- **Testing**: jest, pytest, phpunit, go test, etc.\n")
@@ -171,13 +191,23 @@ func generateTechnologyAnalysis(config CircleCIConfig, outputDir string) error {
 	content.WriteString("- **Databases**: mysql, postgres, redis, etc.\n")
 	content.WriteString("- **Other Tools**: git, curl, ssh, etc.\n\n")
 	
-	content.WriteString(fmt.Sprintf("## All Commands (%d unique commands)\n\n", len(commands)))
+	// Calculate total usage
+	totalUsage := 0
+	for _, cmd := range commands {
+		totalUsage += cmd.Count
+	}
+	
+	content.WriteString(fmt.Sprintf("## All Commands (%d unique commands, %d total usages)\n\n", len(commands), totalUsage))
 	
 	for i, cmd := range commands {
-		content.WriteString(fmt.Sprintf("%d. `%s`\n", i+1, cmd))
+		percentage := float64(cmd.Count) / float64(totalUsage) * 100
+		content.WriteString(fmt.Sprintf("%d. `%s` **(used %d times, %.1f%%)**\n", i+1, cmd.Command, cmd.Count, percentage))
 	}
 	
 	content.WriteString("\n")
+	content.WriteString("## Usage Summary\n\n")
+	content.WriteString("Commands ordered by frequency can help prioritize which technologies are most important in this configuration.\n\n")
+	
 	content.WriteString("## Technology Categories\n\n")
 	content.WriteString("*Please fill in this section after AI analysis*\n\n")
 	content.WriteString("### Package Managers\n- \n\n")
