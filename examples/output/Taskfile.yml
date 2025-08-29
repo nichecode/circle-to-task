@@ -4,12 +4,17 @@ tasks:
         desc: 'Task converted from CircleCI job: build'
         cmds:
             - git checkout HEAD
-            - npm run build
-            - docker build -t myapp:latest .
-            - mkdir -p ./workspace && cp -r [dist/* Dockerfile] ./workspace/
-            - mkdir -p ./artifacts && cp -r dist ./artifacts/
+            - task build-app ENVIRONMENT=production
+            - mkdir -p ./workspace && cp -r [dist/*] ./workspace/
         deps:
-            - npm-install
+            - install-deps
+    build-app:
+        desc: Build the application
+        cmds:
+            - npm run build:{{.ENVIRONMENT}}
+            - mkdir -p ./artifacts && cp -r dist ./artifacts/
+        vars:
+            ENVIRONMENT: '{{.ENVIRONMENT | default "production"}}'
     ci-local:
         desc: Run full CI pipeline locally (where possible)
         cmds:
@@ -27,28 +32,25 @@ tasks:
         cmds:
             - git checkout HEAD
             - echo 'Using local workspace if available'
-            - npm run deploy:staging
-        deps:
-            - npm-install
-    lint:
-        desc: 'Task converted from CircleCI job: lint'
-        cmds:
-            - git checkout HEAD
-            - npm run lint
-            - npm run format:check
-        deps:
-            - npm-install
-    npm-install:
-        desc: Common task - used in 5 jobs
+            - npm run deploy:prod
+    install-deps:
+        desc: Install Node.js dependencies
         cmds:
             - npm install
+            - npm ci --cache .npm --prefer-offline
+    run-tests:
+        desc: Run tests with coverage
+        cmds:
+            - npm test
+            - 'echo ''Custom step not converted: when'''
+        vars:
+            COVERAGE: '{{.COVERAGE | default "false"}}'
     setup:
         desc: 'Task converted from CircleCI job: setup'
         cmds:
             - git checkout HEAD
-            - npm ci --cache .npm --prefer-offline
         deps:
-            - npm-install
+            - install-deps
     setup-local:
         desc: Setup local environment for CircleCI simulation
         cmds:
@@ -59,9 +61,6 @@ tasks:
         desc: 'Task converted from CircleCI job: test'
         cmds:
             - git checkout HEAD
-            - npm test
-            - npm run test:coverage
-            - mkdir -p ./test-results && cp -r test-results ./test-results/
-            - mkdir -p ./artifacts && cp -r coverage ./artifacts/
+            - task run-tests COVERAGE=true
         deps:
-            - npm-install
+            - install-deps

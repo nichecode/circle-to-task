@@ -1,0 +1,76 @@
+version: "3"
+tasks:
+    build:
+        desc: 'Task converted from CircleCI job: build'
+        cmds:
+            - git checkout HEAD
+            - |
+              echo "Using Node version: {{.NODE_VERSION}}"
+              echo "Working directory: $PWD"
+              echo "Home directory: $HOME"
+              npm install
+            - |
+              echo "Building for $NODE_ENV environment"
+              echo "Circle SHA: $CIRCLE_SHA1"
+              npm run build
+        vars:
+            NODE_VERSION: '{{.NODE_VERSION | default "16"}}'
+    ci-local:
+        desc: Run full CI pipeline locally (where possible)
+        cmds:
+            - echo 'Running local CI simulation...'
+            - 'echo ''Note: This runs the build logic, but skips server-only features'''
+        deps:
+            - setup-local
+    clean:
+        desc: Clean local build artifacts
+        cmds:
+            - rm -rf ./workspace ./artifacts ./test-results
+            - echo 'Cleaned local CircleCI simulation directories'
+    deploy-staging:
+        desc: 'Task converted from CircleCI job: deploy-staging'
+        cmds:
+            - task deploy-to-env TARGET_ENV=staging
+            - |
+              echo "Deployed build $CIRCLE_BUILD_NUM to staging"
+              echo "Repository: $CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+        deps:
+            - setup-aws
+    deploy-to-env:
+        desc: Deploy to specified environment
+        cmds:
+            - "echo \"Deploying to {{.TARGET_ENV}}\"\necho \"CircleCI Project: $CIRCLE_PROJECT_REPONAME\"\necho \"CircleCI Branch: $CIRCLE_BRANCH\" \necho \"Build Number: $CIRCLE_BUILD_NUM\"\naws s3 sync dist/ s3://my-bucket-{{.TARGET_ENV}}/\n"
+        vars:
+            TARGET_ENV: '{{.TARGET_ENV | default "staging"}}'
+    setup-aws:
+        desc: Configure AWS credentials
+        cmds:
+            - |
+              echo "Setting up AWS with region: $AWS_DEFAULT_REGION"
+              aws configure set region $AWS_DEFAULT_REGION
+    setup-local:
+        desc: Setup local environment for CircleCI simulation
+        cmds:
+            - mkdir -p ./workspace ./artifacts ./test-results
+            - echo 'Local CircleCI directories created'
+            - 'echo ''Note: Some steps are CircleCI-server only and will be skipped'''
+    test:
+        desc: 'Task converted from CircleCI job: test'
+        cmds:
+            - git checkout HEAD
+            - |
+              echo "Test results will be stored in: $CIRCLE_TEST_REPORTS"
+              echo "CircleCI working directory: $CIRCLE_WORKING_DIRECTORY"
+              npm test
+env:
+    AWS_DEFAULT_REGION: us-east-1
+    CIRCLE_BRANCH: main
+    CIRCLE_BUILD_NUM: "1"
+    CIRCLE_PROJECT_REPONAME: local-repo
+    CIRCLE_PROJECT_USERNAME: local-user
+    CIRCLE_SHA1: local-sha
+    CIRCLE_TEST_REPORTS: ./test-results
+    CIRCLE_WORKING_DIRECTORY: .
+    HOME: $HOME
+    NODE_ENV: development
+    PWD: $PWD

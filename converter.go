@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -36,12 +37,16 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 		taskfile.Tasks[jobName] = task
 
 		// Create minimal CircleCI job that just calls the task
+		// If the job has parameters, we need to handle them in the workflow invocations
+		taskCall := fmt.Sprintf("task %s", jobName)
+		
 		newJob := Job{
-			Executor: job.Executor,
-			Docker:   job.Docker,
-			Machine:  job.Machine,
+			Executor:   job.Executor,
+			Docker:     job.Docker,
+			Machine:    job.Machine,
+			Parameters: job.Parameters, // Keep parameters for workflow invocations
 			Steps: []Step{
-				map[string]interface{}{"run": fmt.Sprintf("task %s", jobName)},
+				map[string]interface{}{"run": taskCall},
 			},
 		}
 		newConfig.Jobs[jobName] = newJob
@@ -55,7 +60,37 @@ func convertConfig(config CircleCIConfig) (CircleCIConfig, Taskfile) {
 	// Add local development helpers
 	addLocalDevTasks(&taskfile)
 
+	// Add environment variable defaults for local development
+	addLocalEnvDefaults(&taskfile, config)
+
 	return newConfig, taskfile
+}
+
+// convertParameterSyntax converts CircleCI parameter syntax to go-task variable syntax
+func convertParameterSyntax(cmd string) string {
+	// Convert << parameters.name >> to {{.NAME}}
+	result := cmd
+	// Find all << parameters.xxx >> patterns and convert them
+	for {
+		start := strings.Index(result, "<< parameters.")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start:], " >>")
+		if end == -1 {
+			break
+		}
+		end += start
+		
+		// Extract parameter name
+		paramPart := result[start+14:end] // Skip "<< parameters."
+		paramName := strings.ToUpper(paramPart)
+		
+		// Replace with go-task syntax
+		result = result[:start] + "{{." + paramName + "}}" + result[end+3:]
+	}
+	
+	return result
 }
 
 // convertJobToTask converts a CircleCI job to a go-task Task  
@@ -63,6 +98,20 @@ func convertJobToTask(jobName string, job Job, patterns map[string]Task, command
 	var cmds []string
 	var deps []string
 	var workingDir string
+	vars := make(map[string]string)
+
+	// Convert job parameters to go-task variables
+	if job.Parameters != nil {
+		for paramName, paramDef := range job.Parameters {
+			if paramMap, ok := paramDef.(map[string]interface{}); ok {
+				defaultValue := ""
+				if defVal, hasDefault := paramMap["default"]; hasDefault {
+					defaultValue = fmt.Sprintf("%v", defVal)
+				}
+				vars[strings.ToUpper(paramName)] = fmt.Sprintf("{{.%s | default \"%s\"}}", strings.ToUpper(paramName), defaultValue)
+			}
+		}
+	}
 
 	// Extract working directory if specified
 	if job.Environment != nil {
@@ -71,12 +120,14 @@ func convertJobToTask(jobName string, job Job, patterns map[string]Task, command
 
 	for _, step := range job.Steps {
 		if cmd := extractCommand(step); cmd != "" {
+			// Convert parameter syntax in commands
+			convertedCmd := convertParameterSyntax(cmd)
 			// Check if this command matches a common pattern
-			normalized := normalizeCommand(cmd)
+			normalized := normalizeCommand(convertedCmd)
 			if taskName := findPatternTask(normalized, patterns); taskName != "" {
 				deps = append(deps, taskName)
 			} else {
-				cmds = append(cmds, cmd)
+				cmds = append(cmds, convertedCmd)
 			}
 		} else if stepStr, ok := step.(string); ok {
 			// Check if this string step is a command invocation
@@ -92,8 +143,9 @@ func convertJobToTask(jobName string, job Job, patterns map[string]Task, command
 				}
 			}
 		} else if commandName, isCommand := isCommandInvocation(step); isCommand {
-			// This step invokes a CircleCI command with parameters, add it as a task dependency
-			deps = append(deps, commandName)
+			// This step invokes a CircleCI command with parameters
+			taskCall := generateTaskCallWithParams(commandName, step, commands)
+			cmds = append(cmds, taskCall)
 		} else {
 			// Handle other step types (checkout, etc.)
 			converted := convertStepToCommand(step)
@@ -111,6 +163,10 @@ func convertJobToTask(jobName string, job Job, patterns map[string]Task, command
 		Cmds:   cmds,
 		Deps:   deps,
 		Silent: false,
+	}
+
+	if len(vars) > 0 {
+		task.Vars = vars
 	}
 
 	if workingDir != "" {
@@ -158,15 +214,32 @@ func convertCommandsToTasks(commands map[string]Command) map[string]Task {
 	
 	for commandName, command := range commands {
 		var cmds []string
+		vars := make(map[string]string)
+		
+		// Convert CircleCI parameters to go-task variables with defaults
+		if command.Parameters != nil {
+			for paramName, paramDef := range command.Parameters {
+				if paramMap, ok := paramDef.(map[string]interface{}); ok {
+					defaultValue := ""
+					if defVal, hasDefault := paramMap["default"]; hasDefault {
+						defaultValue = fmt.Sprintf("%v", defVal)
+					}
+					vars[strings.ToUpper(paramName)] = fmt.Sprintf("{{.%s | default \"%s\"}}", strings.ToUpper(paramName), defaultValue)
+				}
+			}
+		}
 		
 		for _, step := range command.Steps {
 			if cmd := extractCommand(step); cmd != "" {
-				cmds = append(cmds, cmd)
+				// Replace CircleCI parameter syntax with go-task variable syntax
+				convertedCmd := convertParameterSyntax(cmd)
+				cmds = append(cmds, convertedCmd)
 			} else {
 				// Handle other step types
 				converted := convertStepToCommand(step)
 				if !strings.Contains(converted, "Skipping") {
-					cmds = append(cmds, converted)
+					convertedCmd := convertParameterSyntax(converted)
+					cmds = append(cmds, convertedCmd)
 				} else {
 					cmds = append(cmds, fmt.Sprintf("# %s", converted))
 				}
@@ -178,14 +251,128 @@ func convertCommandsToTasks(commands map[string]Command) map[string]Task {
 			desc = fmt.Sprintf("Task converted from CircleCI command: %s", commandName)
 		}
 		
-		tasks[commandName] = Task{
+		task := Task{
 			Desc:   desc,
 			Cmds:   cmds,
 			Silent: false,
 		}
+		
+		if len(vars) > 0 {
+			task.Vars = vars
+		}
+		
+		tasks[commandName] = task
 	}
 	
 	return tasks
+}
+
+// generateTaskCallWithParams generates a go-task call with parameters
+func generateTaskCallWithParams(commandName string, step Step, commands map[string]Command) string {
+	stepMap, ok := step.(map[string]interface{})
+	if !ok {
+		return fmt.Sprintf("task %s", commandName)
+	}
+	
+	commandParams, ok := stepMap[commandName]
+	if !ok {
+		return fmt.Sprintf("task %s", commandName)
+	}
+	
+	paramMap, ok := commandParams.(map[string]interface{})
+	if !ok {
+		return fmt.Sprintf("task %s", commandName)
+	}
+	
+	var paramPairs []string
+	for paramName, paramValue := range paramMap {
+		paramPairs = append(paramPairs, fmt.Sprintf("%s=%v", strings.ToUpper(paramName), paramValue))
+	}
+	
+	if len(paramPairs) > 0 {
+		return fmt.Sprintf("task %s %s", commandName, strings.Join(paramPairs, " "))
+	}
+	
+	return fmt.Sprintf("task %s", commandName)
+}
+
+// addLocalEnvDefaults adds environment variable defaults for local development
+func addLocalEnvDefaults(taskfile *Taskfile, config CircleCIConfig) {
+	envVars := make(map[string]string)
+	
+	// Collect all environment variables used in the config
+	envVarsUsed := extractEnvironmentVariables(config)
+	
+	// Add defaults for common CircleCI environment variables
+	circleCIDefaults := map[string]string{
+		"CIRCLE_PROJECT_REPONAME":     "local-repo",
+		"CIRCLE_PROJECT_USERNAME":     "local-user", 
+		"CIRCLE_BRANCH":               "main",
+		"CIRCLE_BUILD_NUM":            "1",
+		"CIRCLE_SHA1":                 "local-sha",
+		"CIRCLE_WORKING_DIRECTORY":    ".",
+		"CIRCLE_TEST_REPORTS":         "./test-results",
+		"HOME":                        "$HOME",
+		"PWD":                         "$PWD",
+		"NODE_ENV":                    "development",
+		"AWS_DEFAULT_REGION":          "us-east-1",
+	}
+	
+	// Only add defaults for env vars that are actually used
+	for envVar := range envVarsUsed {
+		if defaultValue, hasDefault := circleCIDefaults[envVar]; hasDefault {
+			envVars[envVar] = defaultValue
+		} else {
+			// Add a placeholder for unknown env vars
+			envVars[envVar] = fmt.Sprintf("# TODO: Set %s for local development", envVar)
+		}
+	}
+	
+	if len(envVars) > 0 {
+		taskfile.Env = envVars
+	}
+}
+
+// extractEnvironmentVariables finds all environment variables used in the config
+func extractEnvironmentVariables(config CircleCIConfig) map[string]bool {
+	envVars := make(map[string]bool)
+	envRegex := regexp.MustCompile(`\$([A-Z_][A-Z0-9_]*)\b|\$\{([A-Z_][A-Z0-9_]*)\}`)
+	
+	// Check all jobs
+	for _, job := range config.Jobs {
+		for _, step := range job.Steps {
+			if cmd := extractCommand(step); cmd != "" {
+				matches := envRegex.FindAllStringSubmatch(cmd, -1)
+				for _, match := range matches {
+					if match[1] != "" {
+						envVars[match[1]] = true
+					}
+					if match[2] != "" {
+						envVars[match[2]] = true
+					}
+				}
+			}
+		}
+	}
+	
+	// Check all commands
+	for _, command := range config.Commands {
+		for _, step := range command.Steps {
+			if cmd := extractCommand(step); cmd != "" {
+				matches := envRegex.FindAllStringSubmatch(cmd, -1)
+				for _, match := range matches {
+					if match[1] != "" {
+						envVars[match[1]] = true
+					}
+					if match[2] != "" {
+						envVars[match[2]] = true
+					}
+				}
+			}
+		}
+	}
+	
+	return envVars
 }
 
 // Helper to get job dependencies from workflow

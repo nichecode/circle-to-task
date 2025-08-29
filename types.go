@@ -10,11 +10,12 @@ type CircleCIConfig struct {
 }
 
 type Job struct {
-	Executor    interface{}   `yaml:"executor,omitempty"`
-	Docker      []DockerImage `yaml:"docker,omitempty"`
-	Machine     interface{}   `yaml:"machine,omitempty"`
-	Steps       []Step        `yaml:"steps"`
-	Environment interface{}   `yaml:"environment,omitempty"`
+	Executor    interface{}            `yaml:"executor,omitempty"`
+	Docker      []DockerImage          `yaml:"docker,omitempty"`
+	Machine     interface{}            `yaml:"machine,omitempty"`
+	Steps       []Step                 `yaml:"steps"`
+	Environment interface{}            `yaml:"environment,omitempty"`
+	Parameters  map[string]interface{} `yaml:"parameters,omitempty"`
 }
 
 type DockerImage struct {
@@ -45,12 +46,14 @@ type Taskfile struct {
 	Version string             `yaml:"version"`
 	Tasks   map[string]Task    `yaml:"tasks"`
 	Vars    map[string]string  `yaml:"vars,omitempty"`
+	Env     map[string]string  `yaml:"env,omitempty"`
 }
 
 type Task struct {
-	Desc   string   `yaml:"desc,omitempty"`
-	Cmds   []string `yaml:"cmds"`
-	Deps   []string `yaml:"deps,omitempty"`
-	Dir    string   `yaml:"dir,omitempty"`
-	Silent bool     `yaml:"silent,omitempty"`
+	Desc   string            `yaml:"desc,omitempty"`
+	Cmds   []string          `yaml:"cmds"`
+	Deps   []string          `yaml:"deps,omitempty"`
+	Dir    string            `yaml:"dir,omitempty"`
+	Silent bool              `yaml:"silent,omitempty"`
+	Vars   map[string]string `yaml:"vars,omitempty"`
 }

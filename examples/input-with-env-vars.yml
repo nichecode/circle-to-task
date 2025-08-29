@@ -1,0 +1,91 @@
+version: 2.1
+
+executors:
+  node-executor:
+    docker:
+      - image: node:16
+    environment:
+      NODE_ENV: production
+
+commands:
+  deploy-to-env:
+    description: Deploy to specified environment
+    parameters:
+      target_env:
+        type: string
+        default: "staging"
+    steps:
+      - run:
+          name: Deploy to << parameters.target_env >>
+          command: |
+            echo "Deploying to << parameters.target_env >>"
+            echo "CircleCI Project: $CIRCLE_PROJECT_REPONAME"
+            echo "CircleCI Branch: $CIRCLE_BRANCH" 
+            echo "Build Number: $CIRCLE_BUILD_NUM"
+            aws s3 sync dist/ s3://my-bucket-<< parameters.target_env >>/
+            
+  setup-aws:
+    description: Configure AWS credentials
+    steps:
+      - run:
+          name: Setup AWS
+          command: |
+            echo "Setting up AWS with region: $AWS_DEFAULT_REGION"
+            aws configure set region $AWS_DEFAULT_REGION
+
+jobs:
+  build:
+    executor: node-executor
+    parameters:
+      node_version:
+        type: string
+        default: "16"
+    steps:
+      - checkout
+      - run:
+          name: Install Node << parameters.node_version >>
+          command: |
+            echo "Using Node version: << parameters.node_version >>"
+            echo "Working directory: $PWD"
+            echo "Home directory: $HOME"
+            npm install
+      - run:
+          name: Build application  
+          command: |
+            echo "Building for $NODE_ENV environment"
+            echo "Circle SHA: $CIRCLE_SHA1"
+            npm run build
+            
+  test:
+    executor: node-executor
+    steps:
+      - checkout
+      - run:
+          name: Run tests
+          command: |
+            echo "Test results will be stored in: $CIRCLE_TEST_REPORTS"
+            echo "CircleCI working directory: $CIRCLE_WORKING_DIRECTORY"
+            npm test
+            
+  deploy-staging:
+    executor: node-executor
+    steps:
+      - setup-aws
+      - deploy-to-env:
+          target_env: staging
+      - run:
+          name: Notify deployment
+          command: |
+            echo "Deployed build $CIRCLE_BUILD_NUM to staging"
+            echo "Repository: $CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+
+workflows:
+  version: 2
+  build-test-deploy:
+    jobs:
+      - build:
+          node_version: "18"
+      - test:
+          requires: [build]  
+      - deploy-staging:
+          requires: [test]

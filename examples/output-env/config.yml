@@ -4,14 +4,14 @@ jobs:
         executor: node-executor
         steps:
             - run: task build
-    deploy:
+        parameters:
+            node_version:
+                default: "16"
+                type: string
+    deploy-staging:
         executor: node-executor
         steps:
-            - run: task deploy
-    setup:
-        executor: node-executor
-        steps:
-            - run: task setup
+            - run: task deploy-staging
     test:
         executor: node-executor
         steps:
@@ -19,18 +19,18 @@ jobs:
 workflows:
     build-test-deploy:
         jobs:
-            - setup
+            - build:
+                node_version: "18"
             - test:
                 requires:
-                    - setup
-            - build:
+                    - build
+            - deploy-staging:
                 requires:
                     - test
-            - deploy:
-                requires:
-                    - build
     version: 2
 executors:
     node-executor:
         docker:
             - image: node:16
+        environment:
+            NODE_ENV: production
